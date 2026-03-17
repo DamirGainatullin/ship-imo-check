@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 import re
 from typing import Iterable
 
 import docx
 from pypdf import PdfReader
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -108,7 +111,18 @@ def _split_columns(words: list[dict], *, depth: int = 2) -> list[list[dict]]:
 
 
 def _clean_joined_text(parts: list[str]) -> str:
-    return re.sub(r"\s+", " ", " ".join(part.strip() for part in parts if part.strip())).strip()
+    text = " ".join(part.strip() for part in parts if part.strip())
+    replacements = {
+        "\x00": "ti",
+        "\ufb00": "ff",
+        "\ufb01": "fi",
+        "\ufb02": "fl",
+        "\ufb03": "ffi",
+        "\ufb04": "ffl",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _has_numeric_prefix(path: Path, prefix: str) -> bool:
@@ -249,57 +263,58 @@ def _extract_eu_docx(path: Path) -> Iterable[TextChunk]:
 
 
 def _extract_uk_ship_pdf(path: Path) -> Iterable[TextChunk]:
-    import pdfplumber
-
     entry_header_re = re.compile(r"^\d+\.$")
     footer_re = re.compile(r"^Page \d+ of \d+$")
+    reader = PdfReader(str(path))
+    current_entry_number: str | None = None
+    current_entry_page: int | None = None
+    current_lines: list[str] = []
 
-    with pdfplumber.open(str(path)) as pdf:
-        current_entry_number: str | None = None
-        current_entry_page: int | None = None
-        current_lines: list[str] = []
-
-        def flush() -> TextChunk | None:
-            nonlocal current_entry_number, current_entry_page, current_lines
-            if not current_entry_number or current_entry_page is None or not current_lines:
-                current_entry_number = None
-                current_entry_page = None
-                current_lines = []
-                return None
-
-            chunk = TextChunk(
-                location=f"entry {current_entry_number}, page {current_entry_page}",
-                text=_clean_joined_text(current_lines),
-            )
+    def flush() -> TextChunk | None:
+        nonlocal current_entry_number, current_entry_page, current_lines
+        if not current_entry_number or current_entry_page is None or not current_lines:
             current_entry_number = None
             current_entry_page = None
             current_lines = []
-            return chunk
+            return None
 
-        for page_index, page in enumerate(pdf.pages, start=1):
-            text = page.extract_text(x_tolerance=2, y_tolerance=3) or ""
-            if not text.strip():
+        chunk = TextChunk(
+            location=f"entry {current_entry_number}, page {current_entry_page}",
+            text=_clean_joined_text(current_lines),
+        )
+        current_entry_number = None
+        current_entry_page = None
+        current_lines = []
+        return chunk
+
+    total_pages = len(reader.pages)
+    for page_index, page in enumerate(reader.pages, start=1):
+        if page_index == 1 or page_index % 50 == 0:
+            LOGGER.info("UK PDF progress: %s/%s pages", page_index, total_pages)
+
+        text = page.extract_text() or ""
+        if not text.strip():
+            continue
+
+        lines = [line.replace("\x00", "ti").strip() for line in text.splitlines()]
+        for line in lines:
+            if not line or footer_re.match(line):
                 continue
 
-            lines = [line.replace("\x00", "ti").strip() for line in text.splitlines()]
-            for line in lines:
-                if not line or footer_re.match(line):
-                    continue
+            if entry_header_re.match(line):
+                chunk = flush()
+                if chunk:
+                    yield chunk
+                current_entry_number = line[:-1]
+                current_entry_page = page_index
+                continue
 
-                if entry_header_re.match(line):
-                    chunk = flush()
-                    if chunk:
-                        yield chunk
-                    current_entry_number = line[:-1]
-                    current_entry_page = page_index
-                    continue
+            if current_entry_number is not None:
+                current_lines.append(line)
 
-                if current_entry_number is not None:
-                    current_lines.append(line)
-
-        chunk = flush()
-        if chunk:
-            yield chunk
+    chunk = flush()
+    if chunk:
+        yield chunk
 
 
 def extract_pdf(path: Path) -> Iterable[TextChunk]:
