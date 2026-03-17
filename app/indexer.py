@@ -37,9 +37,6 @@ def _snippet_from_text(text: str, imo: str, max_len: int = 320) -> str:
     if pos < 0:
         return normalized[:max_len].replace("\n", " ").strip()
 
-    # Prefer full entry-style block around IMO:
-    # - first try blank-line block boundaries
-    # - then sentence boundary ('.')
     left_block = normalized.rfind("\n\n", 0, pos)
     left_sent = normalized.rfind(".", 0, pos)
     start = max(left_block + 2 if left_block >= 0 else 0, left_sent + 1 if left_sent >= 0 else 0)
@@ -49,7 +46,6 @@ def _snippet_from_text(text: str, imo: str, max_len: int = 320) -> str:
     candidates = [i for i in (right_block, right_sent) if i >= 0]
     end = min(candidates) + 1 if candidates else len(normalized)
 
-    # If extracted block is too short, expand with symmetric context.
     if end - start < 220:
         start = max(0, pos - 220)
         end = min(len(normalized), pos + len(imo) + 260)

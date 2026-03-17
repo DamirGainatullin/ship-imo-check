@@ -1,27 +1,12 @@
 # Ship IMO Check
 
-Telegram bot for checking IMO numbers in local `sources/` documents (`.pdf`, `.docx`, `.doxc`).
+Телеграм-бот для поиска информации по IMO номеру судна в локальных документах из папки `sources/`.
 
-## Setup
+Проект использует предварительную индексацию PDF и DOCX файлов в SQLite, чтобы быстро находить совпадения и возвращать пользователю контекст, в котором встречается нужный IMO номер.
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
+Для документов с разной структурой используются отдельные сценарии извлечения текста:
+- список судов США в PDF разбирается с учетом трехколоночной верстки;
+- список судов ЕС в DOCX разбирается по строкам таблицы;
+- список судов ВКБ в PDF разбирается по карточкам судов.
 
-Create `.env` from `.env.example` and set `BOT_TOKEN`.
-
-## Commands
-
-```bash
-python manage.py index
-python manage.py check 9595321
-python manage.py run-bot
-```
-
-## Notes
-
-- `index` scans files from `SOURCES_DIR` and writes hits to SQLite (`DB_PATH`).
-- Only text PDFs are supported in this MVP (no OCR for scanned PDFs).
-
+Бот поддерживает поиск по команде `/check <imo>` и по обычному текстовому сообщению, если в нем передан корректный IMO номер.

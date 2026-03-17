@@ -111,6 +111,10 @@ def _clean_joined_text(parts: list[str]) -> str:
     return re.sub(r"\s+", " ", " ".join(part.strip() for part in parts if part.strip())).strip()
 
 
+def _has_numeric_prefix(path: Path, prefix: str) -> bool:
+    return re.match(rf"^{re.escape(prefix)}(?:\D|$)", path.name) is not None
+
+
 def _is_us_entry_start(text: str) -> bool:
     if not text:
         return False
@@ -163,7 +167,6 @@ def _extract_us_sdn_pdf(path: Path) -> Iterable[TextChunk]:
     header_re = re.compile(
         r"^(OFFICE OF FOREIGN ASSETS CONTROL|March \d{1,2}, \d{4}|- \d+ -|To: )"
     )
-    # Fixed three-column layout for this file.
     column_boxes = (
         (40, 40, 205, 740),
         (205, 40, 375, 740),
@@ -300,15 +303,14 @@ def _extract_uk_ship_pdf(path: Path) -> Iterable[TextChunk]:
 
 
 def extract_pdf(path: Path) -> Iterable[TextChunk]:
-    if path.name.startswith("3. "):
+    if _has_numeric_prefix(path, "01"):
         yield from _extract_us_sdn_pdf(path)
         return
 
-    if path.name.startswith("судна "):
+    if _has_numeric_prefix(path, "03"):
         yield from _extract_uk_ship_pdf(path)
         return
 
-    # Multi-column PDFs are handled by splitting text using x-coordinates first.
     try:
         import pdfplumber
 
@@ -335,7 +337,6 @@ def extract_pdf(path: Path) -> Iterable[TextChunk]:
                     yield TextChunk(location=location, text=text)
         return
     except Exception:
-        # Fallback for PDFs that cannot be read by pdfplumber.
         pass
 
     reader = PdfReader(str(path))
@@ -346,7 +347,7 @@ def extract_pdf(path: Path) -> Iterable[TextChunk]:
 
 
 def extract_docx(path: Path) -> Iterable[TextChunk]:
-    if path.name.startswith("4_"):
+    if _has_numeric_prefix(path, "02"):
         yield from _extract_eu_docx(path)
         return
 
