@@ -265,6 +265,7 @@ def _extract_eu_docx(path: Path) -> Iterable[TextChunk]:
 def _extract_uk_ship_pdf(path: Path) -> Iterable[TextChunk]:
     entry_header_re = re.compile(r"^\d+\.$")
     footer_re = re.compile(r"^Page \d+ of \d+$")
+    imo_re = re.compile(r"\bIMO\s*\d{7}\b|\b\d{7}\b")
     reader = PdfReader(str(path))
     current_entry_number: str | None = None
     current_entry_page: int | None = None
@@ -311,6 +312,12 @@ def _extract_uk_ship_pdf(path: Path) -> Iterable[TextChunk]:
 
             if current_entry_number is not None:
                 current_lines.append(line)
+                continue
+
+            # Some UK list revisions may include IMO lines outside numbered
+            # entries (for example in trailing sections). Keep those lines.
+            if imo_re.search(line):
+                yield TextChunk(location=f"page {page_index}", text=line)
 
     chunk = flush()
     if chunk:

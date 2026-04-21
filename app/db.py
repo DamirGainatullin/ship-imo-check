@@ -121,4 +121,3 @@ def find_by_imo(conn: sqlite3.Connection, imo: str) -> list[SearchResult]:
         )
         for row in rows
     ]
-
