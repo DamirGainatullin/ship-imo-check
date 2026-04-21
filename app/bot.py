@@ -15,7 +15,11 @@ SAFE_MESSAGE_LIMIT = 3600
 
 
 def _sanitize_text(text: str, *, max_len: int = 220) -> str:
-    compact = re.sub(r"\s+", " ", text).strip()
+    # Remove typical PDF glyph-noise sequences while keeping isolated tokens
+    # that might be meaningful in source descriptions.
+    no_glyph_tokens = re.sub(r"(?:/g\d+[A-Za-z]*){2,}", " ", text)
+    no_glyph_tokens = re.sub(r"(?:\s+/g\d+[A-Za-z]*){3,}", " ", no_glyph_tokens)
+    compact = re.sub(r"\s+", " ", no_glyph_tokens).strip()
     if len(compact) <= max_len:
         return compact
     return compact[: max_len - 3].rstrip() + "..."
@@ -97,7 +101,10 @@ async def _handle_imo_query(message: Message, settings: Settings, raw_imo: str) 
         return
 
     if not results:
-        await message.answer("Совпадения не найдены.")
+        await message.answer(
+            "Совпадения не найдены.\n"
+            "Рекомендуем дополнительно проверить IMO в исходных документах."
+        )
         return
 
     imo = results[0].imo

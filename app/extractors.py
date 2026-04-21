@@ -122,6 +122,10 @@ def _clean_joined_text(parts: list[str]) -> str:
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
+    # Drop typical PDF glyph-noise sequences, but keep isolated tokens that
+    # could be meaningful in document text.
+    text = re.sub(r"(?:/g\d+[A-Za-z]*){2,}", " ", text)
+    text = re.sub(r"(?:\s+/g\d+[A-Za-z]*){3,}", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
