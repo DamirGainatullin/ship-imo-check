@@ -253,14 +253,18 @@ def _extract_eu_docx(path: Path) -> Iterable[TextChunk]:
             continue
         entry_no = _clean_joined_text([p.text for p in cells[0].paragraphs])
         vessel_name = _clean_joined_text([p.text for p in cells[1].paragraphs])
-        imo = _clean_joined_text([p.text for p in cells[2].paragraphs])
+        imo_raw = _clean_joined_text([p.text for p in cells[2].paragraphs])
         text = _clean_joined_text([p.text for p in cells[3].paragraphs])
         listed_at = _clean_joined_text([p.text for p in cells[4].paragraphs])
-        if not imo or not text:
+        imo_match = re.search(r"\b(\d{7})\b", imo_raw)
+        if not imo_match or not text:
             continue
+        # EU list may store IMO with labels like "IMO number: 1234567".
+        # Keep only the 7-digit value from the dedicated IMO column.
+        imo = imo_match.group(1)
         row_text = " | ".join(
             part
-            for part in (entry_no, vessel_name, imo, text, listed_at)
+            for part in (entry_no, vessel_name, imo, text, listed_at, f"[EU_IMO:{imo}]")
             if part
         )
         yield TextChunk(location=f"row {row_index}", text=row_text)
