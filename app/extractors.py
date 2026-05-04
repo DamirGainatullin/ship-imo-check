@@ -249,15 +249,15 @@ def _extract_eu_docx(path: Path) -> Iterable[TextChunk]:
 
     for row_index, row in enumerate(document.tables[0].rows, start=1):
         cells = row.cells
-        if len(cells) < 5:
+        if len(cells) < 3:
             continue
         entry_no = _clean_joined_text([p.text for p in cells[0].paragraphs])
         vessel_name = _clean_joined_text([p.text for p in cells[1].paragraphs])
         imo_raw = _clean_joined_text([p.text for p in cells[2].paragraphs])
-        text = _clean_joined_text([p.text for p in cells[3].paragraphs])
-        listed_at = _clean_joined_text([p.text for p in cells[4].paragraphs])
+        text = _clean_joined_text([p.text for p in cells[3].paragraphs]) if len(cells) > 3 else ""
+        listed_at = _clean_joined_text([p.text for p in cells[4].paragraphs]) if len(cells) > 4 else ""
         imo_match = re.search(r"\b(\d{7})\b", imo_raw)
-        if not imo_match or not text:
+        if not imo_match:
             continue
         # EU list may store IMO with labels like "IMO number: 1234567".
         # Keep only the 7-digit value from the dedicated IMO column.
