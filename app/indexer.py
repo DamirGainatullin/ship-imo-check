@@ -70,10 +70,6 @@ def _snippet_from_text(text: str, imo: str, max_len: int = 320) -> str:
     return snippet
 
 
-def _is_eu_docx(path: Path) -> bool:
-    return path.suffix.lower() in {".docx", ".doxc"} and re.match(r"^02(?:\D|$)", path.name) is not None
-
-
 def index_sources(settings: Settings, *, force: bool = False) -> None:
     if not settings.sources_dir.exists():
         raise FileNotFoundError(f"Sources directory not found: {settings.sources_dir}")
@@ -105,12 +101,9 @@ def index_sources(settings: Settings, *, force: bool = False) -> None:
         )
 
         hits_set: set[tuple[str, str, str]] = set()
-        is_eu_docx = _is_eu_docx(file_path)
         for chunk in extract_text(file_path):
-            if is_eu_docx:
-                imos = EU_IMO_MARKER_RE.findall(chunk.text)
-            else:
-                imos = extract_imos(chunk.text)
+            eu_imos = EU_IMO_MARKER_RE.findall(chunk.text)
+            imos = eu_imos if eu_imos else extract_imos(chunk.text)
             for imo in imos:
                 hits_set.add((imo, chunk.location, _snippet_from_text(chunk.text, imo)))
         hits = sorted(hits_set)

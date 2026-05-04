@@ -247,27 +247,51 @@ def _extract_eu_docx(path: Path) -> Iterable[TextChunk]:
     if not document.tables:
         return
 
-    for row_index, row in enumerate(document.tables[0].rows, start=1):
-        cells = row.cells
-        if len(cells) < 3:
-            continue
-        entry_no = _clean_joined_text([p.text for p in cells[0].paragraphs])
-        vessel_name = _clean_joined_text([p.text for p in cells[1].paragraphs])
-        imo_raw = _clean_joined_text([p.text for p in cells[2].paragraphs])
-        text = _clean_joined_text([p.text for p in cells[3].paragraphs]) if len(cells) > 3 else ""
-        listed_at = _clean_joined_text([p.text for p in cells[4].paragraphs]) if len(cells) > 4 else ""
-        imo_match = re.search(r"\b(\d{7})\b", imo_raw)
-        if not imo_match:
-            continue
-        # EU list may store IMO with labels like "IMO number: 1234567".
-        # Keep only the 7-digit value from the dedicated IMO column.
-        imo = imo_match.group(1)
-        row_text = " | ".join(
-            part
-            for part in (entry_no, vessel_name, imo, text, listed_at, f"[EU_IMO:{imo}]")
-            if part
-        )
-        yield TextChunk(location=f"row {row_index}", text=row_text)
+    for table_index, table in enumerate(document.tables, start=1):
+        for row_index, row in enumerate(table.rows, start=1):
+            cells = row.cells
+            if len(cells) < 3:
+                continue
+            entry_no = _clean_joined_text([p.text for p in cells[0].paragraphs])
+            vessel_name = _clean_joined_text([p.text for p in cells[1].paragraphs])
+            imo_raw = _clean_joined_text([p.text for p in cells[2].paragraphs])
+            text = _clean_joined_text([p.text for p in cells[3].paragraphs]) if len(cells) > 3 else ""
+            listed_at = _clean_joined_text([p.text for p in cells[4].paragraphs]) if len(cells) > 4 else ""
+            imo_match = re.search(r"\b(\d{7})\b", imo_raw)
+            if not imo_match:
+                continue
+            # EU list may store IMO with labels like "IMO number: 1234567".
+            # Keep only the 7-digit value from the dedicated IMO column.
+            imo = imo_match.group(1)
+            row_text = " | ".join(
+                part
+                for part in (entry_no, vessel_name, imo, text, listed_at, f"[EU_IMO:{imo}]")
+                if part
+            )
+            yield TextChunk(location=f"table {table_index} row {row_index}", text=row_text)
+
+
+def _looks_like_eu_docx(path: Path) -> bool:
+    try:
+        document = docx.Document(str(path))
+    except Exception:
+        return False
+    if not document.tables:
+        return False
+
+    checks = 0
+    matches = 0
+    for table in document.tables:
+        for row in table.rows[:25]:
+            cells = row.cells
+            if len(cells) < 3:
+                continue
+            checks += 1
+            third_col_text = _clean_joined_text([p.text for p in cells[2].paragraphs])
+            if re.search(r"\b(?:IMO\s*number:?\s*)?\d{7}\b", third_col_text, flags=re.IGNORECASE):
+                matches += 1
+
+    return checks > 0 and matches >= 2
 
 
 def _extract_uk_ship_pdf(path: Path) -> Iterable[TextChunk]:
@@ -377,7 +401,7 @@ def extract_pdf(path: Path) -> Iterable[TextChunk]:
 
 
 def extract_docx(path: Path) -> Iterable[TextChunk]:
-    if _has_numeric_prefix(path, "02"):
+    if _has_numeric_prefix(path, "02") or _looks_like_eu_docx(path):
         yield from _extract_eu_docx(path)
         return
 
