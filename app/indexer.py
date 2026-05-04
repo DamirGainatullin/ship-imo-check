@@ -99,10 +99,11 @@ def index_sources(settings: Settings, *, force: bool = False) -> None:
             indexed_at=datetime.now(timezone.utc).isoformat(),
         )
 
-        hits: list[tuple[str, str, str]] = []
+        hits_set: set[tuple[str, str, str]] = set()
         for chunk in extract_text(file_path):
             for imo in extract_imos(chunk.text):
-                hits.append((imo, chunk.location, _snippet_from_text(chunk.text, imo)))
+                hits_set.add((imo, chunk.location, _snippet_from_text(chunk.text, imo)))
+        hits = sorted(hits_set)
 
         insert_hits(conn, document_id=document_id, hits=hits)
         conn.commit()

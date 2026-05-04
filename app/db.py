@@ -41,6 +41,8 @@ def init_db(conn: sqlite3.Connection) -> None:
         );
 
         CREATE INDEX IF NOT EXISTS idx_imo_hits_imo ON imo_hits (imo);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_imo_hits_entry
+            ON imo_hits (document_id, imo, location, snippet);
         """
     )
     conn.commit()
@@ -93,7 +95,7 @@ def insert_hits(
 ) -> None:
     conn.executemany(
         """
-        INSERT INTO imo_hits(document_id, imo, location, snippet)
+        INSERT OR IGNORE INTO imo_hits(document_id, imo, location, snippet)
         VALUES (?, ?, ?, ?)
         """,
         ((document_id, imo, location, snippet) for imo, location, snippet in hits),
