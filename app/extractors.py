@@ -271,6 +271,82 @@ def _extract_eu_docx(path: Path) -> Iterable[TextChunk]:
             yield TextChunk(location=f"table {table_index} row {row_index}", text=row_text)
 
 
+def _detect_imo_column(rows: list[list[str]]) -> int | None:
+    # Prefer explicit header when available.
+    for row in rows[:4]:
+        for col_idx, cell in enumerate(row):
+            if "imo number" in cell.lower():
+                return col_idx
+
+    # Fallback: choose the column that most frequently contains 7-digit values.
+    if not rows:
+        return None
+
+    max_cols = max(len(row) for row in rows)
+    best_col: int | None = None
+    best_score = 0
+    for col_idx in range(max_cols):
+        score = 0
+        for row in rows[:60]:
+            if col_idx >= len(row):
+                continue
+            if re.search(r"\b\d{7}\b", row[col_idx]):
+                score += 1
+        if score > best_score:
+            best_col = col_idx
+            best_score = score
+
+    if best_score < 2:
+        return None
+    return best_col
+
+
+def _extract_eu_pdf(path: Path) -> Iterable[TextChunk]:
+    import pdfplumber
+
+    with pdfplumber.open(str(path)) as pdf:
+        for page_index, page in enumerate(pdf.pages, start=1):
+            tables = page.extract_tables() or []
+            for table_index, table in enumerate(tables, start=1):
+                if not table:
+                    continue
+
+                cleaned_rows: list[list[str]] = []
+                for row in table:
+                    if not row:
+                        continue
+                    cleaned = [_clean_joined_text([cell or ""]) for cell in row]
+                    if any(cleaned):
+                        cleaned_rows.append(cleaned)
+                if not cleaned_rows:
+                    continue
+
+                imo_col = _detect_imo_column(cleaned_rows)
+                if imo_col is None:
+                    continue
+
+                for row_index, row in enumerate(cleaned_rows, start=1):
+                    if imo_col >= len(row):
+                        continue
+                    imo_cell = row[imo_col]
+                    if "imo number" in imo_cell.lower():
+                        continue
+
+                    imo_match = re.search(r"\b(\d{7})\b", imo_cell)
+                    if not imo_match:
+                        continue
+
+                    imo = imo_match.group(1)
+                    row_text = " | ".join(part for part in row if part)
+                    if not row_text:
+                        continue
+                    row_text = f"{row_text} | [EU_IMO:{imo}]"
+                    yield TextChunk(
+                        location=f"page {page_index} table {table_index} row {row_index}",
+                        text=row_text,
+                    )
+
+
 def _looks_like_eu_docx(path: Path) -> bool:
     try:
         document = docx.Document(str(path))
@@ -292,6 +368,28 @@ def _looks_like_eu_docx(path: Path) -> bool:
                 matches += 1
 
     return checks > 0 and matches >= 2
+
+
+def _looks_like_eu_pdf(path: Path) -> bool:
+    try:
+        import pdfplumber
+    except Exception:
+        return False
+
+    try:
+        with pdfplumber.open(str(path)) as pdf:
+            for page in pdf.pages[:6]:
+                for table in page.extract_tables() or []:
+                    for row in table[:4]:
+                        if not row:
+                            continue
+                        cells = [_clean_joined_text([cell or ""]).lower() for cell in row]
+                        if any("imo number" in cell for cell in cells):
+                            return True
+    except Exception:
+        return False
+
+    return False
 
 
 def _extract_uk_ship_pdf(path: Path) -> Iterable[TextChunk]:
@@ -363,6 +461,10 @@ def extract_pdf(path: Path) -> Iterable[TextChunk]:
 
     if _has_numeric_prefix(path, "03"):
         yield from _extract_uk_ship_pdf(path)
+        return
+
+    if _has_numeric_prefix(path, "02") or _looks_like_eu_pdf(path):
+        yield from _extract_eu_pdf(path)
         return
 
     try:
