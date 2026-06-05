@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import re
+from urllib.parse import urlsplit, urlunsplit
 
 from aiogram import Bot, Dispatcher, F
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.filters import Command
 from aiogram.types import Message
 
@@ -12,6 +15,25 @@ from app.search import find_imo
 
 TELEGRAM_TEXT_LIMIT = 4096
 SAFE_MESSAGE_LIMIT = 3600
+
+
+def _mask_proxy_url(proxy_url: str) -> str:
+    parts = urlsplit(proxy_url)
+    if not parts.netloc or "@" not in parts.netloc:
+        return proxy_url
+
+    _, host_part = parts.netloc.rsplit("@", 1)
+    return urlunsplit((parts.scheme, f"***@{host_part}", parts.path, parts.query, parts.fragment))
+
+
+def _build_bot(settings: Settings) -> Bot:
+    if settings.telegram_proxy_url:
+        logging.info("[TELEGRAM] proxy enabled: %s", _mask_proxy_url(settings.telegram_proxy_url))
+        return Bot(
+            token=settings.bot_token,
+            session=AiohttpSession(proxy=settings.telegram_proxy_url),
+        )
+    return Bot(token=settings.bot_token)
 
 
 def _sanitize_text(text: str, *, max_len: int = 220) -> str:
@@ -137,6 +159,6 @@ async def run_bot(settings: Settings, *, drop_pending_updates: bool = False) -> 
     if not settings.bot_token:
         raise RuntimeError("BOT_TOKEN is not set. Add it to .env")
 
-    bot = Bot(token=settings.bot_token)
+    bot = _build_bot(settings)
     dp = _make_dispatcher(settings)
     await dp.start_polling(bot, drop_pending_updates=drop_pending_updates)
